@@ -34,6 +34,20 @@ import (
 const version = "0.1.0"
 const logo = "🦞"
 
+// VerbosityLevel represents the verbosity level of the CLI
+type VerbosityLevel int
+
+const (
+	// QuietLevel suppresses all output except errors
+	QuietLevel VerbosityLevel = iota
+	// NormalLevel is the default verbosity level
+	NormalLevel
+	// VerboseLevel provides detailed output
+	VerboseLevel
+)
+
+var globalVerbosity logger.VerbosityLevel = logger.NormalLevel
+
 func copyDirectory(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -74,26 +88,47 @@ func main() {
 		os.Exit(1)
 	}
 
-	command := os.Args[1]
+	// Parse global flags
+	args := os.Args[1:]
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-v", "--verbose":
+			globalVerbosity = logger.VerboseLevel
+			logger.SetVerbosity(logger.VerboseLevel)
+		case "-q", "--quiet":
+			globalVerbosity = logger.QuietLevel
+			logger.SetVerbosity(logger.QuietLevel)
+		}
+	}
+
+	// Remove global flags from args
+	args = removeGlobalFlags(args)
+
+	if len(args) == 0 {
+		printHelp()
+		os.Exit(1)
+	}
+
+	command := args[0]
 
 	switch command {
 	case "onboard":
 		onboard()
 	case "agent":
-		agentCmd()
+		agentCmd(args[1:])
 	case "gateway":
-		gatewayCmd()
+		gatewayCmd(args[1:])
 	case "status":
 		statusCmd()
 	case "cron":
-		cronCmd()
+		cronCmd(args[1:])
 	case "skills":
-		if len(os.Args) < 3 {
+		if len(args) < 2 {
 			skillsHelp()
 			return
 		}
 
-		subcommand := os.Args[2]
+		subcommand := args[1]
 
 		cfg, err := loadConfig()
 		if err != nil {
@@ -115,11 +150,11 @@ func main() {
 		case "install":
 			skillsInstallCmd(installer)
 		case "remove", "uninstall":
-			if len(os.Args) < 4 {
+			if len(args) < 3 {
 				fmt.Println("Usage: picoclaw skills remove <skill-name>")
 				return
 			}
-			skillsRemoveCmd(installer, os.Args[3])
+			skillsRemoveCmd(installer, args[2])
 		case "install-builtin":
 			skillsInstallBuiltinCmd(workspace)
 		case "list-builtin":
@@ -127,16 +162,16 @@ func main() {
 		case "search":
 			skillsSearchCmd(installer)
 		case "show":
-			if len(os.Args) < 4 {
+			if len(args) < 3 {
 				fmt.Println("Usage: picoclaw skills show <skill-name>")
 				return
 			}
-			skillsShowCmd(skillsLoader, os.Args[3])
+			skillsShowCmd(skillsLoader, args[2])
 		default:
 			fmt.Printf("Unknown skills command: %s\n", subcommand)
 			skillsHelp()
 		}
-	case "version", "--version", "-v":
+	case "version", "--version":
 		fmt.Printf("%s picoclaw v%s\n", logo, version)
 	default:
 		fmt.Printf("Unknown command: %s\n", command)
@@ -145,18 +180,39 @@ func main() {
 	}
 }
 
+func removeGlobalFlags(args []string) []string {
+	result := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-v" || args[i] == "--verbose" || args[i] == "-q" || args[i] == "--quiet" {
+			continue
+		}
+		result = append(result, args[i])
+	}
+	return result
+}
+
 func printHelp() {
-	fmt.Printf("%s picoclaw - Personal AI Assistant v%s\n\n", logo, version)
-	fmt.Println("Usage: picoclaw <command>")
-	fmt.Println()
-	fmt.Println("Commands:")
-	fmt.Println("  onboard     Initialize picoclaw configuration and workspace")
-	fmt.Println("  agent       Interact with the agent directly")
-	fmt.Println("  gateway     Start picoclaw gateway")
-	fmt.Println("  status      Show picoclaw status")
-	fmt.Println("  cron        Manage scheduled tasks")
-	fmt.Println("  skills      Manage skills (install, list, remove)")
-	fmt.Println("  version     Show version information")
+	if globalVerbosity != logger.QuietLevel {
+		fmt.Printf("%s picoclaw - Personal AI Assistant v%s\n\n", logo, version)
+		fmt.Println("Usage: picoclaw [global options] <command>")
+		fmt.Println()
+		fmt.Println("Global Options:")
+		fmt.Println("  -v, --verbose  Enable verbose output")
+		fmt.Println("  -q, --quiet    Suppress all output except errors")
+		fmt.Println()
+		fmt.Println("Commands:")
+		fmt.Println("  onboard     Initialize picoclaw configuration and workspace")
+		fmt.Println("  agent       Interact with the agent directly")
+		fmt.Println("  gateway     Start picoclaw gateway")
+		fmt.Println("  status      Show picoclaw status")
+		fmt.Println("  cron        Manage scheduled tasks")
+		fmt.Println("  skills      Manage skills (install, list, remove)")
+		fmt.Println("  version     Show version information")
+		fmt.Println()
+		fmt.Println("Use 'picoclaw <command> --help' for more information about a command.")
+	} else {
+		logger.InfoC("help", "Use -v or --verbose for more information.")
+	}
 }
 
 func onboard() {
@@ -360,16 +416,17 @@ This file stores important information that should persist across sessions.
 	}
 }
 
-func agentCmd() {
+func agentCmd(args []string) {
 	message := ""
 	sessionKey := "cli:default"
 
-	args := os.Args[2:]
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--debug", "-d":
 			logger.SetLevel(logger.DEBUG)
-			fmt.Println("🔍 Debug mode enabled")
+			if globalVerbosity != QuietLevel {
+				fmt.Println("🔍 Debug mode enabled")
+			}
 		case "-m", "--message":
 			if i+1 < len(args) {
 				message = args[i+1]
@@ -398,14 +455,16 @@ func agentCmd() {
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
-	// Print agent startup info (only for interactive mode)
-	startupInfo := agentLoop.GetStartupInfo()
-	logger.InfoCF("agent", "Agent initialized",
-		map[string]interface{}{
-			"tools_count":      startupInfo["tools"].(map[string]interface{})["count"],
-			"skills_total":     startupInfo["skills"].(map[string]interface{})["total"],
-			"skills_available": startupInfo["skills"].(map[string]interface{})["available"],
-		})
+	// Print agent startup info (only for interactive mode and not in quiet mode)
+	if globalVerbosity != QuietLevel {
+		startupInfo := agentLoop.GetStartupInfo()
+		logger.InfoCF("agent", "Agent initialized",
+			map[string]interface{}{
+				"tools_count":      startupInfo["tools"].(map[string]interface{})["count"],
+				"skills_total":     startupInfo["skills"].(map[string]interface{})["total"],
+				"skills_available": startupInfo["skills"].(map[string]interface{})["available"],
+			})
+	}
 
 	if message != "" {
 		ctx := context.Background()
@@ -414,9 +473,13 @@ func agentCmd() {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("\n%s %s\n", logo, response)
+		if globalVerbosity != QuietLevel {
+			fmt.Printf("\n%s %s\n", logo, response)
+		}
 	} else {
-		fmt.Printf("%s Interactive mode (Ctrl+C to exit)\n\n", logo)
+		if globalVerbosity != QuietLevel {
+			fmt.Printf("%s Interactive mode (Ctrl+C to exit)\n\n", logo)
+		}
 		interactiveMode(agentLoop, sessionKey)
 	}
 }
@@ -433,8 +496,10 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 	})
 
 	if err != nil {
-		fmt.Printf("Error initializing readline: %v\n", err)
-		fmt.Println("Falling back to simple input mode...")
+		if globalVerbosity != QuietLevel {
+			fmt.Printf("Error initializing readline: %v\n", err)
+			fmt.Println("Falling back to simple input mode...")
+		}
 		simpleInteractiveMode(agentLoop, sessionKey)
 		return
 	}
@@ -444,10 +509,14 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 		line, err := rl.Readline()
 		if err != nil {
 			if err == readline.ErrInterrupt || err == io.EOF {
-				fmt.Println("\nGoodbye!")
+				if globalVerbosity != QuietLevel {
+					fmt.Println("\nGoodbye!")
+				}
 				return
 			}
-			fmt.Printf("Error reading input: %v\n", err)
+			if globalVerbosity != QuietLevel {
+				fmt.Printf("Error reading input: %v\n", err)
+			}
 			continue
 		}
 
@@ -457,32 +526,44 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 		}
 
 		if input == "exit" || input == "quit" {
-			fmt.Println("Goodbye!")
+			if globalVerbosity != QuietLevel {
+				fmt.Println("Goodbye!")
+			}
 			return
 		}
 
 		ctx := context.Background()
 		response, err := agentLoop.ProcessDirect(ctx, input, sessionKey)
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			if globalVerbosity != QuietLevel {
+				fmt.Printf("Error: %v\n", err)
+			}
 			continue
 		}
 
-		fmt.Printf("\n%s %s\n\n", logo, response)
+		if globalVerbosity != QuietLevel {
+			fmt.Printf("\n%s %s\n\n", logo, response)
+		}
 	}
 }
 
 func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print(fmt.Sprintf("%s You: ", logo))
+		if globalVerbosity != QuietLevel {
+			fmt.Print(fmt.Sprintf("%s You: ", logo))
+		}
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
-				fmt.Println("\nGoodbye!")
+				if globalVerbosity != QuietLevel {
+					fmt.Println("\nGoodbye!")
+				}
 				return
 			}
-			fmt.Printf("Error reading input: %v\n", err)
+			if globalVerbosity != QuietLevel {
+				fmt.Printf("Error reading input: %v\n", err)
+			}
 			continue
 		}
 
@@ -492,28 +573,35 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 		}
 
 		if input == "exit" || input == "quit" {
-			fmt.Println("Goodbye!")
+			if globalVerbosity != QuietLevel {
+				fmt.Println("Goodbye!")
+			}
 			return
 		}
 
 		ctx := context.Background()
 		response, err := agentLoop.ProcessDirect(ctx, input, sessionKey)
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+			if globalVerbosity != QuietLevel {
+				fmt.Printf("Error: %v\n", err)
+			}
 			continue
 		}
 
-		fmt.Printf("\n%s %s\n\n", logo, response)
+		if globalVerbosity != QuietLevel {
+			fmt.Printf("\n%s %s\n\n", logo, response)
+		}
 	}
 }
 
-func gatewayCmd() {
+func gatewayCmd(args []string) {
 	// Check for --debug flag
-	args := os.Args[2:]
 	for _, arg := range args {
 		if arg == "--debug" || arg == "-d" {
 			logger.SetLevel(logger.DEBUG)
-			fmt.Println("🔍 Debug mode enabled")
+			if globalVerbosity != QuietLevel {
+				fmt.Println("🔍 Debug mode enabled")
+			}
 			break
 		}
 	}
@@ -534,16 +622,21 @@ func gatewayCmd() {
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
 	// Print agent startup info
-	fmt.Println("\n📦 Agent Status:")
+	if globalVerbosity != QuietLevel {
+		fmt.Println("\n📦 Agent Status:")
+		startupInfo := agentLoop.GetStartupInfo()
+		toolsInfo := startupInfo["tools"].(map[string]interface{})
+		skillsInfo := startupInfo["skills"].(map[string]interface{})
+		fmt.Printf("  • Tools: %d loaded\n", toolsInfo["count"])
+		fmt.Printf("  • Skills: %d/%d available\n",
+			skillsInfo["available"],
+			skillsInfo["total"])
+	}
+
+	// Log to file as well
 	startupInfo := agentLoop.GetStartupInfo()
 	toolsInfo := startupInfo["tools"].(map[string]interface{})
 	skillsInfo := startupInfo["skills"].(map[string]interface{})
-	fmt.Printf("  • Tools: %d loaded\n", toolsInfo["count"])
-	fmt.Printf("  • Skills: %d/%d available\n",
-		skillsInfo["available"],
-		skillsInfo["total"])
-
-	// Log to file as well
 	logger.InfoCF("agent", "Agent initialized",
 		map[string]interface{}{
 			"tools_count":      toolsInfo["count"],
@@ -589,14 +682,16 @@ func gatewayCmd() {
 	}
 
 	enabledChannels := channelManager.GetEnabledChannels()
-	if len(enabledChannels) > 0 {
-		fmt.Printf("✓ Channels enabled: %s\n", enabledChannels)
-	} else {
-		fmt.Println("⚠ Warning: No channels enabled")
-	}
+	if globalVerbosity != QuietLevel {
+		if len(enabledChannels) > 0 {
+			fmt.Printf("✓ Channels enabled: %s\n", enabledChannels)
+		} else {
+			fmt.Println("⚠ Warning: No channels enabled")
+		}
 
-	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
-	fmt.Println("Press Ctrl+C to stop")
+		fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
+		fmt.Println("Press Ctrl+C to stop")
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -604,12 +699,16 @@ func gatewayCmd() {
 	if err := cronService.Start(); err != nil {
 		fmt.Printf("Error starting cron service: %v\n", err)
 	}
-	fmt.Println("✓ Cron service started")
+	if globalVerbosity != QuietLevel {
+		fmt.Println("✓ Cron service started")
+	}
 
 	if err := heartbeatService.Start(); err != nil {
 		fmt.Printf("Error starting heartbeat service: %v\n", err)
 	}
-	fmt.Println("✓ Heartbeat service started")
+	if globalVerbosity != QuietLevel {
+		fmt.Println("✓ Heartbeat service started")
+	}
 
 	if err := channelManager.StartAll(ctx); err != nil {
 		fmt.Printf("Error starting channels: %v\n", err)
@@ -621,13 +720,17 @@ func gatewayCmd() {
 	signal.Notify(sigChan, os.Interrupt)
 	<-sigChan
 
-	fmt.Println("\nShutting down...")
+	if globalVerbosity != QuietLevel {
+		fmt.Println("\nShutting down...")
+	}
 	cancel()
 	heartbeatService.Stop()
 	cronService.Stop()
 	agentLoop.Stop()
 	channelManager.StopAll(ctx)
-	fmt.Println("✓ Gateway stopped")
+	if globalVerbosity != QuietLevel {
+		fmt.Println("✓ Gateway stopped")
+	}
 }
 
 func statusCmd() {
@@ -639,23 +742,25 @@ func statusCmd() {
 
 	configPath := getConfigPath()
 
-	fmt.Printf("%s picoclaw Status\n\n", logo)
+	if globalVerbosity != logger.QuietLevel {
+		fmt.Printf("%s picoclaw Status\n\n", logo)
+	}
 
 	if _, err := os.Stat(configPath); err == nil {
-		fmt.Println("Config:", configPath, "✓")
+		logger.InfoC("status", fmt.Sprintf("Config: %s ✓", configPath))
 	} else {
-		fmt.Println("Config:", configPath, "✗")
+		logger.WarnC("status", fmt.Sprintf("Config: %s ✗", configPath))
 	}
 
 	workspace := cfg.WorkspacePath()
 	if _, err := os.Stat(workspace); err == nil {
-		fmt.Println("Workspace:", workspace, "✓")
+		logger.InfoC("status", fmt.Sprintf("Workspace: %s ✓", workspace))
 	} else {
-		fmt.Println("Workspace:", workspace, "✗")
+		logger.WarnC("status", fmt.Sprintf("Workspace: %s ✗", workspace))
 	}
 
 	if _, err := os.Stat(configPath); err == nil {
-		fmt.Printf("Model: %s\n", cfg.Agents.Defaults.Model)
+		logger.InfoC("status", fmt.Sprintf("Model: %s", cfg.Agents.Defaults.Model))
 
 		hasOpenRouter := cfg.Providers.OpenRouter.APIKey != ""
 		hasAnthropic := cfg.Providers.Anthropic.APIKey != ""
@@ -671,16 +776,16 @@ func statusCmd() {
 			}
 			return "not set"
 		}
-		fmt.Println("OpenRouter API:", status(hasOpenRouter))
-		fmt.Println("Anthropic API:", status(hasAnthropic))
-		fmt.Println("OpenAI API:", status(hasOpenAI))
-		fmt.Println("Gemini API:", status(hasGemini))
-		fmt.Println("Zhipu API:", status(hasZhipu))
-		fmt.Println("Groq API:", status(hasGroq))
+		logger.InfoC("status", fmt.Sprintf("OpenRouter API: %s", status(hasOpenRouter)))
+		logger.InfoC("status", fmt.Sprintf("Anthropic API: %s", status(hasAnthropic)))
+		logger.InfoC("status", fmt.Sprintf("OpenAI API: %s", status(hasOpenAI)))
+		logger.InfoC("status", fmt.Sprintf("Gemini API: %s", status(hasGemini)))
+		logger.InfoC("status", fmt.Sprintf("Zhipu API: %s", status(hasZhipu)))
+		logger.InfoC("status", fmt.Sprintf("Groq API: %s", status(hasGroq)))
 		if hasVLLM {
-			fmt.Printf("vLLM/Local: ✓ %s\n", cfg.Providers.VLLM.APIBase)
+			logger.InfoC("status", fmt.Sprintf("vLLM/Local: ✓ %s", cfg.Providers.VLLM.APIBase))
 		} else {
-			fmt.Println("vLLM/Local: not set")
+			logger.InfoC("status", "vLLM/Local: not set")
 		}
 	}
 }
@@ -713,18 +818,18 @@ func loadConfig() (*config.Config, error) {
 	return config.LoadConfig(getConfigPath())
 }
 
-func cronCmd() {
-	if len(os.Args) < 3 {
+func cronCmd(args []string) {
+	if len(args) < 1 {
 		cronHelp()
 		return
 	}
 
-	subcommand := os.Args[2]
+	subcommand := args[0]
 
 	// Load config to get workspace path
 	cfg, err := loadConfig()
 	if err != nil {
-		fmt.Printf("Error loading config: %v\n", err)
+		logger.ErrorC("cron", fmt.Sprintf("Error loading config: %v", err))
 		return
 	}
 
@@ -736,37 +841,44 @@ func cronCmd() {
 	case "add":
 		cronAddCmd(cronStorePath)
 	case "remove":
-		if len(os.Args) < 4 {
-			fmt.Println("Usage: picoclaw cron remove <job_id>")
+		if len(args) < 2 {
+			logger.ErrorC("cron", "Usage: picoclaw cron remove <job_id>")
 			return
 		}
-		cronRemoveCmd(cronStorePath, os.Args[3])
+		cronRemoveCmd(cronStorePath, args[1])
 	case "enable":
 		cronEnableCmd(cronStorePath, false)
 	case "disable":
 		cronEnableCmd(cronStorePath, true)
 	default:
-		fmt.Printf("Unknown cron command: %s\n", subcommand)
+		logger.ErrorC("cron", fmt.Sprintf("Unknown cron command: %s", subcommand))
 		cronHelp()
 	}
 }
 
 func cronHelp() {
-	fmt.Println("\nCron commands:")
-	fmt.Println("  list              List all scheduled jobs")
-	fmt.Println("  add              Add a new scheduled job")
-	fmt.Println("  remove <id>       Remove a job by ID")
-	fmt.Println("  enable <id>      Enable a job")
-	fmt.Println("  disable <id>     Disable a job")
-	fmt.Println()
-	fmt.Println("Add options:")
-	fmt.Println("  -n, --name       Job name")
-	fmt.Println("  -m, --message    Message for agent")
-	fmt.Println("  -e, --every      Run every N seconds")
-	fmt.Println("  -c, --cron       Cron expression (e.g. '0 9 * * *')")
-	fmt.Println("  -d, --deliver     Deliver response to channel")
-	fmt.Println("  --to             Recipient for delivery")
-	fmt.Println("  --channel        Channel for delivery")
+	if globalVerbosity != logger.QuietLevel {
+		logger.InfoC("cron", "\nCron commands:")
+		logger.InfoC("cron", "  list              List all scheduled jobs")
+		logger.InfoC("cron", "  add               Add a new scheduled job")
+		logger.InfoC("cron", "  remove <id>       Remove a job by ID")
+		logger.InfoC("cron", "  enable <id>       Enable a job")
+		logger.InfoC("cron", "  disable <id>      Disable a job")
+		logger.InfoC("cron", "")
+		logger.InfoC("cron", "Add options:")
+		logger.InfoC("cron", "  -n, --name        Job name")
+		logger.InfoC("cron", "  -m, --message     Message for agent")
+		logger.InfoC("cron", "  -e, --every       Run every N seconds")
+		logger.InfoC("cron", "  -c, --cron        Cron expression (e.g. '0 9 * * *')")
+		logger.InfoC("cron", "  -d, --deliver     Deliver response to channel")
+		logger.InfoC("cron", "  --to              Recipient for delivery")
+		logger.InfoC("cron", "  --channel         Channel for delivery")
+		logger.InfoC("cron", "")
+		logger.InfoC("cron", "Use -v or --verbose for more detailed output")
+		logger.InfoC("cron", "Use -q or --quiet to suppress all output except errors")
+	} else {
+		logger.InfoC("cron", "Use -v or --verbose for more information about cron commands.")
+	}
 }
 
 func cronListCmd(storePath string) {
@@ -774,12 +886,15 @@ func cronListCmd(storePath string) {
 	jobs := cs.ListJobs(true)  // Show all jobs, including disabled
 
 	if len(jobs) == 0 {
-		fmt.Println("No scheduled jobs.")
+		logger.InfoC("cron", "No scheduled jobs.")
 		return
 	}
 
-	fmt.Println("\nScheduled Jobs:")
-	fmt.Println("----------------")
+	if globalVerbosity != logger.QuietLevel {
+		logger.InfoC("cron", "Scheduled Jobs:")
+		logger.InfoC("cron", "----------------")
+	}
+
 	for _, job := range jobs {
 		var schedule string
 		if job.Schedule.Kind == "every" && job.Schedule.EveryMS != nil {
@@ -801,10 +916,9 @@ func cronListCmd(storePath string) {
 			status = "disabled"
 		}
 
-		fmt.Printf("  %s (%s)\n", job.Name, job.ID)
-		fmt.Printf("    Schedule: %s\n", schedule)
-		fmt.Printf("    Status: %s\n", status)
-		fmt.Printf("    Next run: %s\n", nextRun)
+		jobInfo := fmt.Sprintf("%s (%s)\n    Schedule: %s\n    Status: %s\n    Next run: %s",
+			job.Name, job.ID, schedule, status, nextRun)
+		logger.InfoC("cron", jobInfo)
 	}
 }
 
@@ -927,17 +1041,17 @@ func cronEnableCmd(storePath string, disable bool) {
 	}
 }
 
-func skillsCmd() {
-	if len(os.Args) < 3 {
+func skillsCmd(args []string) {
+	if len(args) < 1 {
 		skillsHelp()
 		return
 	}
 
-	subcommand := os.Args[2]
+	subcommand := args[0]
 
 	cfg, err := loadConfig()
 	if err != nil {
-		fmt.Printf("Error loading config: %v\n", err)
+		logger.ErrorC("skills", fmt.Sprintf("Error loading config: %v", err))
 		os.Exit(1)
 	}
 
@@ -955,58 +1069,69 @@ func skillsCmd() {
 	case "install":
 		skillsInstallCmd(installer)
 	case "remove", "uninstall":
-		if len(os.Args) < 4 {
-			fmt.Println("Usage: picoclaw skills remove <skill-name>")
+		if len(args) < 2 {
+			logger.ErrorC("skills", "Usage: picoclaw skills remove <skill-name>")
 			return
 		}
-		skillsRemoveCmd(installer, os.Args[3])
+		skillsRemoveCmd(installer, args[1])
 	case "search":
 		skillsSearchCmd(installer)
 	case "show":
-		if len(os.Args) < 4 {
-			fmt.Println("Usage: picoclaw skills show <skill-name>")
+		if len(args) < 2 {
+			logger.ErrorC("skills", "Usage: picoclaw skills show <skill-name>")
 			return
 		}
-		skillsShowCmd(skillsLoader, os.Args[3])
+		skillsShowCmd(skillsLoader, args[1])
 	default:
-		fmt.Printf("Unknown skills command: %s\n", subcommand)
+		logger.ErrorC("skills", fmt.Sprintf("Unknown skills command: %s", subcommand))
 		skillsHelp()
 	}
 }
 
 func skillsHelp() {
-	fmt.Println("\nSkills commands:")
-	fmt.Println("  list                    List installed skills")
-	fmt.Println("  install <repo>          Install skill from GitHub")
-	fmt.Println("  install-builtin          Install all builtin skills to workspace")
-	fmt.Println("  list-builtin             List available builtin skills")
-	fmt.Println("  remove <name>           Remove installed skill")
-	fmt.Println("  search                  Search available skills")
-	fmt.Println("  show <name>             Show skill details")
-	fmt.Println()
-	fmt.Println("Examples:")
-	fmt.Println("  picoclaw skills list")
-	fmt.Println("  picoclaw skills install sipeed/picoclaw-skills/weather")
-	fmt.Println("  picoclaw skills install-builtin")
-	fmt.Println("  picoclaw skills list-builtin")
-	fmt.Println("  picoclaw skills remove weather")
+	if globalVerbosity != logger.QuietLevel {
+		logger.InfoC("skills", "\nSkills commands:")
+		logger.InfoC("skills", "  list                    List installed skills")
+		logger.InfoC("skills", "  install <repo>          Install skill from GitHub")
+		logger.InfoC("skills", "  install-builtin         Install all builtin skills to workspace")
+		logger.InfoC("skills", "  list-builtin            List available builtin skills")
+		logger.InfoC("skills", "  remove <n>              Remove installed skill")
+		logger.InfoC("skills", "  search                  Search available skills")
+		logger.InfoC("skills", "  show <n>                Show skill details")
+		logger.InfoC("skills", "")
+		logger.InfoC("skills", "Examples:")
+		logger.InfoC("skills", "  picoclaw skills list")
+		logger.InfoC("skills", "  picoclaw skills install sipeed/picoclaw-skills/weather")
+		logger.InfoC("skills", "  picoclaw skills install-builtin")
+		logger.InfoC("skills", "  picoclaw skills list-builtin")
+		logger.InfoC("skills", "  picoclaw skills remove weather")
+		logger.InfoC("skills", "")
+		logger.InfoC("skills", "Use -v or --verbose for more detailed output")
+		logger.InfoC("skills", "Use -q or --quiet to suppress all output except errors")
+	} else {
+		logger.InfoC("skills", "Use -v or --verbose for more information about skills commands.")
+	}
 }
 
 func skillsListCmd(loader *skills.SkillsLoader) {
 	allSkills := loader.ListSkills()
 
 	if len(allSkills) == 0 {
-		fmt.Println("No skills installed.")
+		logger.InfoC("skills", "No skills installed.")
 		return
 	}
 
-	fmt.Println("\nInstalled Skills:")
-	fmt.Println("------------------")
+	if globalVerbosity != logger.QuietLevel {
+		logger.InfoC("skills", "Installed Skills:")
+		logger.InfoC("skills", "------------------")
+	}
+
 	for _, skill := range allSkills {
-		fmt.Printf("  ✓ %s (%s)\n", skill.Name, skill.Source)
+		skillInfo := fmt.Sprintf("✓ %s (%s)", skill.Name, skill.Source)
 		if skill.Description != "" {
-			fmt.Printf("    %s\n", skill.Description)
+			skillInfo += fmt.Sprintf("\n    %s", skill.Description)
 		}
+		logger.InfoC("skills", skillInfo)
 	}
 }
 

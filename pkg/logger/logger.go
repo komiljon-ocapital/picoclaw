@@ -12,6 +12,7 @@ import (
 )
 
 type LogLevel int
+type VerbosityLevel int
 
 const (
 	DEBUG LogLevel = iota
@@ -19,6 +20,12 @@ const (
 	WARN
 	ERROR
 	FATAL
+)
+
+const (
+	QuietLevel VerbosityLevel = iota
+	NormalLevel
+	VerboseLevel
 )
 
 var (
@@ -30,10 +37,11 @@ var (
 		FATAL: "FATAL",
 	}
 
-	currentLevel = INFO
-	logger       *Logger
-	once         sync.Once
-	mu           sync.RWMutex
+	currentLevel     = INFO
+	currentVerbosity = NormalLevel
+	logger           *Logger
+	once             sync.Once
+	mu               sync.RWMutex
 )
 
 type Logger struct {
@@ -65,6 +73,18 @@ func GetLevel() LogLevel {
 	mu.RLock()
 	defer mu.RUnlock()
 	return currentLevel
+}
+
+func SetVerbosity(level VerbosityLevel) {
+	mu.Lock()
+	defer mu.Unlock()
+	currentVerbosity = level
+}
+
+func GetVerbosity() VerbosityLevel {
+	mu.RLock()
+	defer mu.RUnlock()
+	return currentVerbosity
 }
 
 func EnableFileLogging(filePath string) error {
@@ -123,8 +143,12 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		}
 	}
 
+	if currentVerbosity == QuietLevel && level < ERROR {
+		return
+	}
+
 	var fieldStr string
-	if len(fields) > 0 {
+	if len(fields) > 0 && currentVerbosity == VerboseLevel {
 		fieldStr = " " + formatFields(fields)
 	}
 

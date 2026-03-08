@@ -472,6 +472,20 @@ picoclaw agent -m "Hello"
 | `picoclaw cron list` | List all scheduled jobs |
 | `picoclaw cron add ...` | Add a scheduled job |
 
+### Global Options
+
+| Option | Description |
+|--------|-------------|
+| `-v, --verbose` | Enable verbose output |
+| `-q, --quiet` | Suppress all output except errors |
+
+These global options can be used with any command to control the verbosity of the output. For example:
+
+```bash
+picoclaw -v status  # Show detailed status information
+picoclaw -q agent -m "Hello"  # Minimal output for scripting
+```
+
 ### Scheduled Tasks / Reminders
 
 PicoClaw supports scheduled reminders and recurring tasks through the `cron` tool:
