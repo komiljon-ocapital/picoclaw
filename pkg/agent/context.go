@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/paths"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -22,19 +23,15 @@ type ContextBuilder struct {
 }
 
 func getGlobalConfigDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".picoclaw")
+	return paths.GetGlobalConfigPath()
 }
 
 func NewContextBuilder(workspace string) *ContextBuilder {
 	// builtin skills: skills directory in current project
 	// Use the skills/ directory under the current working directory
 	wd, _ := os.Getwd()
-	builtinSkillsDir := filepath.Join(wd, "skills")
-	globalSkillsDir := filepath.Join(getGlobalConfigDir(), "skills")
+	builtinSkillsDir := filepath.Join(wd, paths.SkillsDir)
+	globalSkillsDir := paths.GetGlobalSkillsPath()
 
 	return &ContextBuilder{
 		workspace:    workspace,
@@ -68,9 +65,9 @@ You are picoclaw, a helpful AI assistant.
 
 ## Workspace
 Your workspace is at: %s
-- Memory: %s/memory/MEMORY.md
-- Daily Notes: %s/memory/YYYYMM/YYYYMMDD.md
-- Skills: %s/skills/{skill-name}/SKILL.md
+- Memory: %s
+- Daily Notes: %s
+- Skills: %s
 
 %s
 
@@ -80,8 +77,8 @@ Your workspace is at: %s
 
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
-3. **Memory** - When remembering something, write to %s/memory/MEMORY.md`,
-		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
+3. **Memory** - When remembering something, write to %s`,
+		now, runtime, workspacePath, paths.GetMemoryFilePath(workspacePath), filepath.Join(paths.GetMemoryPath(workspacePath), "YYYYMM"), filepath.Join(workspacePath, paths.SkillsDir, "{skill-name}", paths.SkillFile), toolsSection, paths.GetMemoryFilePath(workspacePath))
 }
 
 func (cb *ContextBuilder) buildToolsSection() string {

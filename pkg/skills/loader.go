@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/sipeed/picoclaw/pkg/paths"
 )
 
 type SkillMetadata struct {
@@ -31,7 +33,7 @@ type SkillsLoader struct {
 func NewSkillsLoader(workspace string, globalSkills string, builtinSkills string) *SkillsLoader {
 	return &SkillsLoader{
 		workspace:       workspace,
-		workspaceSkills: filepath.Join(workspace, "skills"),
+		workspaceSkills: paths.GetSkillsPath(workspace),
 		globalSkills:    globalSkills, // ~/.picoclaw/skills
 		builtinSkills:   builtinSkills,
 	}
@@ -44,7 +46,7 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 		if dirs, err := os.ReadDir(sl.workspaceSkills); err == nil {
 			for _, dir := range dirs {
 				if dir.IsDir() {
-					skillFile := filepath.Join(sl.workspaceSkills, dir.Name(), "SKILL.md")
+					skillFile := paths.GetSkillFilePath(sl.workspaceSkills, dir.Name())
 					if _, err := os.Stat(skillFile); err == nil {
 						info := SkillInfo{
 							Name:   dir.Name(),
@@ -67,7 +69,7 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 		if dirs, err := os.ReadDir(sl.globalSkills); err == nil {
 			for _, dir := range dirs {
 				if dir.IsDir() {
-					skillFile := filepath.Join(sl.globalSkills, dir.Name(), "SKILL.md")
+					skillFile := paths.GetSkillFilePath(sl.globalSkills, dir.Name())
 					if _, err := os.Stat(skillFile); err == nil {
 						// 检查是否已被 workspace skills 覆盖
 						exists := false
@@ -101,7 +103,7 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 		if dirs, err := os.ReadDir(sl.builtinSkills); err == nil {
 			for _, dir := range dirs {
 				if dir.IsDir() {
-					skillFile := filepath.Join(sl.builtinSkills, dir.Name(), "SKILL.md")
+					skillFile := paths.GetSkillFilePath(sl.builtinSkills, dir.Name())
 					if _, err := os.Stat(skillFile); err == nil {
 						// 检查是否已被 workspace 或 global skills 覆盖
 						exists := false
@@ -137,7 +139,7 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 	// 1. 优先从 workspace skills 加载（项目级别）
 	if sl.workspaceSkills != "" {
-		skillFile := filepath.Join(sl.workspaceSkills, name, "SKILL.md")
+		skillFile := paths.GetSkillFilePath(sl.workspaceSkills, name)
 		if content, err := os.ReadFile(skillFile); err == nil {
 			return sl.stripFrontmatter(string(content)), true
 		}
@@ -145,7 +147,7 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 
 	// 2. 其次从全局 skills 加载 (~/.picoclaw/skills)
 	if sl.globalSkills != "" {
-		skillFile := filepath.Join(sl.globalSkills, name, "SKILL.md")
+		skillFile := paths.GetSkillFilePath(sl.globalSkills, name)
 		if content, err := os.ReadFile(skillFile); err == nil {
 			return sl.stripFrontmatter(string(content)), true
 		}
@@ -153,7 +155,7 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 
 	// 3. 最后从内置 skills 加载
 	if sl.builtinSkills != "" {
-		skillFile := filepath.Join(sl.builtinSkills, name, "SKILL.md")
+		skillFile := paths.GetSkillFilePath(sl.builtinSkills, name)
 		if content, err := os.ReadFile(skillFile); err == nil {
 			return sl.stripFrontmatter(string(content)), true
 		}

@@ -25,6 +25,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/cron"
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/paths"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -104,9 +105,8 @@ func main() {
 		workspace := cfg.WorkspacePath()
 		installer := skills.NewSkillInstaller(workspace)
 		// 获取全局配置目录和内置 skills 目录
-		globalDir := filepath.Dir(getConfigPath())
-		globalSkillsDir := filepath.Join(globalDir, "skills")
-		builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
+		globalSkillsDir := paths.GetGlobalSkillsPath()
+		builtinSkillsDir := paths.GetBuiltinSkillsPath()
 		skillsLoader := skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir)
 
 		switch subcommand {
@@ -160,7 +160,7 @@ func printHelp() {
 }
 
 func onboard() {
-	configPath := getConfigPath()
+	configPath := paths.GetConfigFilePath()
 
 	if _, err := os.Stat(configPath); err == nil {
 		fmt.Printf("Config already exists at %s\n", configPath)
@@ -180,9 +180,10 @@ func onboard() {
 	}
 
 	workspace := cfg.WorkspacePath()
-	os.MkdirAll(workspace, 0755)
-	os.MkdirAll(filepath.Join(workspace, "memory"), 0755)
-	os.MkdirAll(filepath.Join(workspace, "skills"), 0755)
+	if err := paths.EnsureWorkspaceDirs(workspace); err != nil {
+		fmt.Printf("Error creating workspace directories: %v\n", err)
+		os.Exit(1)
+	}
 
 	createWorkspaceTemplates(workspace)
 
@@ -315,9 +316,9 @@ Discussions: https://github.com/sipeed/picoclaw/discussions
 		}
 	}
 
-	memoryDir := filepath.Join(workspace, "memory")
+	memoryDir := paths.GetMemoryPath(workspace)
 	os.MkdirAll(memoryDir, 0755)
-	memoryFile := filepath.Join(memoryDir, "MEMORY.md")
+	memoryFile := paths.GetMemoryFilePath(workspace)
 	if _, err := os.Stat(memoryFile); os.IsNotExist(err) {
 		memoryContent := `# Long-term Memory
 
@@ -344,7 +345,7 @@ This file stores important information that should persist across sessions.
 		os.WriteFile(memoryFile, []byte(memoryContent), 0644)
 		fmt.Println("  Created memory/MEMORY.md")
 
-		skillsDir := filepath.Join(workspace, "skills")
+		skillsDir := paths.GetSkillsPath(workspace)
 		if _, err := os.Stat(skillsDir); os.IsNotExist(err) {
 			os.MkdirAll(skillsDir, 0755)
 			fmt.Println("  Created skills/")
@@ -426,7 +427,7 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 
 	rl, err := readline.NewEx(&readline.Config{
 		Prompt:          prompt,
-		HistoryFile:     filepath.Join(os.TempDir(), ".picoclaw_history"),
+		HistoryFile:     paths.GetHistoryFilePath(),
 		HistoryLimit:    100,
 		InterruptPrompt: "^C",
 		EOFPrompt:       "exit",
@@ -637,7 +638,7 @@ func statusCmd() {
 		return
 	}
 
-	configPath := getConfigPath()
+	configPath := paths.GetConfigFilePath()
 
 	fmt.Printf("%s picoclaw Status\n\n", logo)
 
@@ -686,12 +687,11 @@ func statusCmd() {
 }
 
 func getConfigPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw", "config.json")
+	return paths.GetConfigFilePath()
 }
 
 func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string) *cron.CronService {
-	cronStorePath := filepath.Join(workspace, "cron", "jobs.json")
+	cronStorePath := paths.GetCronJobsPath(workspace)
 
 	// Create cron service
 	cronService := cron.NewCronService(cronStorePath, nil)
@@ -728,7 +728,7 @@ func cronCmd() {
 		return
 	}
 
-	cronStorePath := filepath.Join(cfg.WorkspacePath(), "cron", "jobs.json")
+	cronStorePath := paths.GetCronJobsPath(cfg.WorkspacePath())
 
 	switch subcommand {
 	case "list":
@@ -944,9 +944,8 @@ func skillsCmd() {
 	workspace := cfg.WorkspacePath()
 	installer := skills.NewSkillInstaller(workspace)
 	// 获取全局配置目录和内置 skills 目录
-	globalDir := filepath.Dir(getConfigPath())
-	globalSkillsDir := filepath.Join(globalDir, "skills")
-	builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
+	globalSkillsDir := paths.GetGlobalSkillsPath()
+	builtinSkillsDir := paths.GetBuiltinSkillsPath()
 	skillsLoader := skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir)
 
 	switch subcommand {
@@ -1044,7 +1043,7 @@ func skillsRemoveCmd(installer *skills.SkillInstaller, skillName string) {
 
 func skillsInstallBuiltinCmd(workspace string) {
 	builtinSkillsDir := "./picoclaw/skills"
-	workspaceSkillsDir := filepath.Join(workspace, "skills")
+	workspaceSkillsDir := paths.GetSkillsPath(workspace)
 
 	fmt.Printf("Copying builtin skills to workspace...\n")
 
@@ -1084,7 +1083,7 @@ func skillsListBuiltinCmd() {
 		fmt.Printf("Error loading config: %v\n", err)
 		return
 	}
-	builtinSkillsDir := filepath.Join(filepath.Dir(cfg.WorkspacePath()), "picoclaw", "skills")
+	builtinSkillsDir := paths.GetBuiltinSkillsPath()
 
 	fmt.Println("\nAvailable Builtin Skills:")
 	fmt.Println("-----------------------")
@@ -1103,7 +1102,7 @@ func skillsListBuiltinCmd() {
 	for _, entry := range entries {
 		if entry.IsDir() {
 			skillName := entry.Name()
-			skillFile := filepath.Join(builtinSkillsDir, skillName, "SKILL.md")
+			skillFile := paths.GetSkillFilePath(builtinSkillsDir, skillName)
 
 			description := "No description"
 			if _, err := os.Stat(skillFile); err == nil {

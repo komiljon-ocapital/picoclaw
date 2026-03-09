@@ -17,6 +17,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/paths"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
@@ -309,7 +310,7 @@ func (c *TelegramChannel) downloadFileWithInfo(file *tgbotapi.File, ext string) 
 	url := file.Link(c.bot.Token)
 	log.Printf("File URL: %s", url)
 
-	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
+	mediaDir := paths.GetMediaTempPath()
 	if err := os.MkdirAll(mediaDir, 0755); err != nil {
 		log.Printf("Failed to create media directory: %v", err)
 		return ""
@@ -372,7 +373,7 @@ func (c *TelegramChannel) downloadFile(fileID, ext string) string {
 	url := file.Link(c.bot.Token)
 	log.Printf("File URL: %s", url)
 
-	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
+	mediaDir := paths.GetMediaTempPath()
 	if err := os.MkdirAll(mediaDir, 0755); err != nil {
 		log.Printf("Failed to create media directory: %v", err)
 		return ""

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/paths"
 )
 
 type SkillInstaller struct {
@@ -37,13 +39,13 @@ func NewSkillInstaller(workspace string) *SkillInstaller {
 }
 
 func (si *SkillInstaller) InstallFromGitHub(ctx context.Context, repo string) error {
-	skillDir := filepath.Join(si.workspace, "skills", filepath.Base(repo))
+	skillDir := filepath.Join(paths.GetSkillsPath(si.workspace), filepath.Base(repo))
 
 	if _, err := os.Stat(skillDir); err == nil {
 		return fmt.Errorf("skill '%s' already exists", filepath.Base(repo))
 	}
 
-	url := fmt.Sprintf("https://raw.githubusercontent.com/%s/main/SKILL.md", repo)
+	url := fmt.Sprintf("https://raw.githubusercontent.com/%s/main/%s", repo, paths.SkillFile)
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -70,7 +72,7 @@ func (si *SkillInstaller) InstallFromGitHub(ctx context.Context, repo string) er
 		return fmt.Errorf("failed to create skill directory: %w", err)
 	}
 
-	skillPath := filepath.Join(skillDir, "SKILL.md")
+	skillPath := filepath.Join(skillDir, paths.SkillFile)
 	if err := os.WriteFile(skillPath, body, 0644); err != nil {
 		return fmt.Errorf("failed to write skill file: %w", err)
 	}
@@ -79,7 +81,7 @@ func (si *SkillInstaller) InstallFromGitHub(ctx context.Context, repo string) er
 }
 
 func (si *SkillInstaller) Uninstall(skillName string) error {
-	skillDir := filepath.Join(si.workspace, "skills", skillName)
+	skillDir := filepath.Join(paths.GetSkillsPath(si.workspace), skillName)
 
 	if _, err := os.Stat(skillDir); os.IsNotExist(err) {
 		return fmt.Errorf("skill '%s' not found", skillName)
@@ -125,7 +127,7 @@ func (si *SkillInstaller) ListAvailableSkills(ctx context.Context) ([]AvailableS
 }
 
 func (si *SkillInstaller) ListBuiltinSkills() []BuiltinSkill {
-	builtinSkillsDir := filepath.Join(filepath.Dir(si.workspace), "picoclaw", "skills")
+	builtinSkillsDir := filepath.Join(filepath.Dir(si.workspace), "picoclaw", paths.SkillsDir)
 
 	entries, err := os.ReadDir(builtinSkillsDir)
 	if err != nil {
@@ -137,7 +139,7 @@ func (si *SkillInstaller) ListBuiltinSkills() []BuiltinSkill {
 		if entry.IsDir() {
 			_ = entry
 			skillName := entry.Name()
-			skillFile := filepath.Join(builtinSkillsDir, skillName, "SKILL.md")
+			skillFile := paths.GetSkillFilePath(builtinSkillsDir, skillName)
 
 			data, err := os.ReadFile(skillFile)
 			description := ""

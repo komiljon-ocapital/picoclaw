@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/paths"
 )
 
 type HeartbeatService struct {
@@ -97,8 +99,7 @@ func (hs *HeartbeatService) checkHeartbeat() {
 }
 
 func (hs *HeartbeatService) buildPrompt() string {
-	notesDir := filepath.Join(hs.workspace, "memory")
-	notesFile := filepath.Join(notesDir, "HEARTBEAT.md")
+	notesFile := paths.GetHeartbeatFilePath(hs.workspace)
 
 	var notes string
 	if data, err := os.ReadFile(notesFile); err == nil {
@@ -122,7 +123,7 @@ Be proactive in identifying potential issues or improvements.
 }
 
 func (hs *HeartbeatService) log(message string) {
-	logFile := filepath.Join(hs.workspace, "memory", "heartbeat.log")
+	logFile := paths.GetHeartbeatLogPath(hs.workspace)
 	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return

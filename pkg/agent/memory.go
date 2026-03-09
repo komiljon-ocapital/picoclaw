@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/paths"
 )
 
 // MemoryStore manages persistent memory for the agent.
@@ -25,8 +27,8 @@ type MemoryStore struct {
 // NewMemoryStore creates a new MemoryStore with the given workspace path.
 // It ensures the memory directory exists.
 func NewMemoryStore(workspace string) *MemoryStore {
-	memoryDir := filepath.Join(workspace, "memory")
-	memoryFile := filepath.Join(memoryDir, "MEMORY.md")
+	memoryDir := paths.GetMemoryPath(workspace)
+	memoryFile := paths.GetMemoryFilePath(workspace)
 
 	// Ensure memory directory exists
 	os.MkdirAll(memoryDir, 0755)

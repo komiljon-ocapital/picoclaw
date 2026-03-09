@@ -15,6 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/paths"
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
@@ -208,7 +209,7 @@ func isAudioFile(filename, contentType string) bool {
 }
 
 func (c *DiscordChannel) downloadAttachment(url, filename string) string {
-	mediaDir := filepath.Join(os.TempDir(), "picoclaw_media")
+	mediaDir := paths.GetMediaTempPath()
 	if err := os.MkdirAll(mediaDir, 0755); err != nil {
 		log.Printf("Failed to create media directory: %v", err)
 		return ""
